@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 export class AgentService {
   private openai: OpenAI;
   private e2bService: E2BService;
+  private conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
   constructor() {
     this.openai = new OpenAI({
@@ -42,6 +43,7 @@ export class AgentService {
           entire process by making function calls only, as this can impair your
           ability to solve the problem and think insightfully.`
         },
+        ...this.conversationHistory,
         {
           role: "user",
           content: message
@@ -152,6 +154,9 @@ export class AgentService {
           }
         }
       }
+
+      this.conversationHistory.push({ role: "user", content: message });
+      this.conversationHistory.push({ role: "assistant", content: currentMessage });
 
       if (currentMessage && !toolCalls.length) {
         streamCallback({
