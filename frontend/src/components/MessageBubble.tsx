@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Bot, ChevronDown, ChevronUp } from 'lucide-react';
-import { ChatMessage } from '@ai-agent/shared';
+import { ChatMessage } from '@manus-replica/shared';
 
 interface MessageBubbleProps {
   message: ChatMessage;

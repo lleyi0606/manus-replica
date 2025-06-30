@@ -25,13 +25,22 @@ export class AgentService {
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
           role: "system",
-          content: `You are an AI assistant that can help users by executing commands in a virtual machine. 
-          You have access to the following tools:
-          1. shell_command - Execute shell commands
-          2. file_operation - Perform file operations (read, write, create, delete, list)
-          3. code_execution - Execute code in various languages
-          
-          Always explain what you're going to do before executing commands. Be helpful and thorough.`
+          content: `
+          ## PERSISTENCE
+          You are an agent that can help users by executing commands in a virtual machine - please keep going until the user's query is completely
+          resolved, before ending your turn and yielding back to the user. Only
+          terminate your turn when you are sure that the problem is solved.
+
+          ## TOOL CALLING
+          If you are not sure about file content or codebase structure pertaining to
+          the user's request, use your tools to read files and gather the relevant
+          information: do NOT guess or make up an answer.
+
+          ## PLANNING
+          You MUST plan extensively before each function call, and reflect
+          extensively on the outcomes of the previous function calls. DO NOT do this
+          entire process by making function calls only, as this can impair your
+          ability to solve the problem and think insightfully.`
         },
         {
           role: "user",
@@ -99,7 +108,7 @@ export class AgentService {
       ];
 
       const stream = await this.openai.chat.completions.create({
-        model: "gpt-4-turbo-preview",
+        model: "gpt-4o",
         messages,
         tools,
         tool_choice: "auto",
