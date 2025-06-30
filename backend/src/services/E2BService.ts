@@ -37,7 +37,8 @@ export class E2BService {
       cwd: command.workingDirectory || '/home/user'
     });
 
-    const output = await process.output;
+    await process.wait(); // Wait for the process to finish
+    const output = process.output;
 
     return {
       stdout: output.stdout,
@@ -118,7 +119,8 @@ export class E2BService {
       cwd: '/home/user'
     });
 
-    const output = await process.output;
+    await process.wait();
+    const output = process.output;
 
     // Clean up temporary file
     try {
