@@ -43,6 +43,18 @@ export class AgentService {
     }
   }
 
+  async resetConversation(): Promise<void> {
+    // Clear conversation history
+    this.conversationHistory = [];
+    this.seenToolCallIds.clear();
+    
+    // Close and recreate E2B session
+    await this.e2bService.closeSession();
+    await this.e2bService.createSession();
+    
+    console.log('[AgentService] Conversation reset - cleared history and recreated session');
+  }
+
   private async runThoughtCycle(
     streamCallback: (response: StreamResponse) => void,
     maxIterations: number = 10

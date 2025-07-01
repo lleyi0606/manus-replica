@@ -31,6 +31,9 @@ wss.on('connection', (ws) => {
         await agentService.processMessage(data.message, (response) => {
           ws.send(JSON.stringify(response));
         });
+      } else if (data.type === 'reset') {
+        // Reset conversation context
+        await agentService.resetConversation();
       }
     } catch (error) {
       console.error('WebSocket error:', error);

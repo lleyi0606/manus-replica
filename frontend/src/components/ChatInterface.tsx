@@ -1,18 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send } from 'lucide-react';
+import { Send, RotateCcw } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { StreamResponse, ChatMessage, ToolCall } from '@manus-replica/shared';
 
-// Define a union type for all chat events
-// You can expand this as needed
 export type ChatEvent =
   | { type: 'message'; data: ChatMessage }
   | { type: 'thinking'; data: { content: string } }
   | { type: 'tool_call'; data: ToolCall }
   | { type: 'error'; data: any };
 
-// Minimal thinking and error components
 const ThinkingBubble: React.FC<{ content: string }> = ({ content }) => (
   <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-400">
     <div className="flex items-center mb-2">
@@ -32,6 +29,7 @@ export const ChatInterface: React.FC = () => {
   const [chatEvents, setChatEvents] = useState<ChatEvent[]>([]);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,6 +131,24 @@ export const ChatInterface: React.FC = () => {
     });
   };
 
+  const clearConversation = async () => {
+    setIsResetting(true);
+    setChatEvents([]);
+    
+    // Send a reset message to the backend
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: 'reset',
+        message: 'Reset conversation context'
+      }));
+    }
+    
+    // Simulate a brief loading time for better UX
+    setTimeout(() => {
+      setIsResetting(false);
+    }, 1000);
+  };
+
   const sendMessage = () => {
     if (!input.trim() || !wsRef.current || !isConnected) return;
     const userMessage: ChatMessage = {
@@ -162,9 +178,43 @@ export const ChatInterface: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)] bg-white rounded-lg shadow-sm border">
-      {/* Connection Status */}
-      <div className={`px-4 py-2 text-sm ${isConnected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-        {isConnected ? '🟢 Connected to AI Agent' : '🔴 Disconnected'}
+      {/* Header with connection status and reset button */}
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+        <div className={`flex items-center text-sm ${isConnected ? 'text-green-700' : 'text-red-700'}`}>
+          <div className={`w-2 h-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          {isConnected ? 'Connected' : 'Disconnected'}
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          {isConnected && (
+            <button
+              onClick={clearConversation}
+              disabled={isResetting}
+              className="flex items-center px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Clear conversation and start fresh"
+            >
+              {isResetting ? (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-1 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Clear Chat
+                </>
+              )}
+            </button>
+          )}
+          {!isConnected && (
+            <button
+              onClick={connectWebSocket}
+              className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Reconnect
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages Area */}
@@ -212,11 +262,11 @@ export const ChatInterface: React.FC = () => {
             placeholder="Ask me to execute commands, manage files, or run code..."
             className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             rows={2}
-            disabled={!isConnected}
+            disabled={!isConnected || isResetting}
           />
           <button
             onClick={sendMessage}
-            disabled={!input.trim() || !isConnected}
+            disabled={!input.trim() || !isConnected || isResetting}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             <Send className="h-4 w-4" />
