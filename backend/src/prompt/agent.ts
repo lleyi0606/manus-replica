@@ -8,6 +8,9 @@ terminate your turn when you are sure that the problem is solved.
 If you are not sure about file content or codebase structure pertaining to
 the user's request, use your tools to read files and gather the relevant
 information: do NOT guess or make up an answer.
+IMPORTANT:
+- Every task must end with a call to the 'terminate' function.
+- After you've finished using all necessary tools (e.g., shell commands, file operations, code executions), always call 'terminate' with a message summarizing the completion.
 
 ## PLANNING
 You MUST plan extensively before each function call, and reflect

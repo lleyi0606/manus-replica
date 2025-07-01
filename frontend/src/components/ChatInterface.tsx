@@ -276,14 +276,6 @@ export const ChatInterface: React.FC = () => {
               Stop
             </button>
           )}
-          {!isConnected && (
-            <button
-              onClick={connectWebSocket}
-              className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Reconnect
-            </button>
-          )}
         </div>
       </div>
 
@@ -325,7 +317,7 @@ export const ChatInterface: React.FC = () => {
             case 'error':
               return <ErrorBubble key={idx} error={event.data} onClear={
                 (typeof event.data === 'string' ? event.data : event.data?.message) === 'Failed to process message'
-                  ? handleReconnectAndSanitize
+                  ? undefined
                   : undefined
               } />;
             default:
