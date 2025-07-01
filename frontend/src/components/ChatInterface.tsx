@@ -48,6 +48,17 @@ const ErrorBubble: React.FC<{ error: any, onClear?: () => void }> = ({ error, on
   </div>
 );
 
+const SuccessBanner: React.FC<{ summary?: string; reason?: string }> = ({ summary, reason }) => (
+  <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-4 rounded flex items-center space-x-3">
+    <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+    <div>
+      <div className="font-semibold text-green-800">Task Completed</div>
+      {summary && <div className="text-green-700 text-sm mt-1">{summary}</div>}
+      {reason && <div className="text-green-600 text-xs mt-1">Reason: {reason}</div>}
+    </div>
+  </div>
+);
+
 export const ChatInterface: React.FC = () => {
   const [chatEvents, setChatEvents] = useState<ChatEvent[]>([]);
   const [input, setInput] = useState('');
@@ -108,6 +119,7 @@ export const ChatInterface: React.FC = () => {
           setIsThinking(true);
           return mergeThinking(prev, response.data.content);
         case 'tool_call': {
+          console.log('[Frontend] tool_call event:', response.data);
           setIsThinking(true);
           // Update or add tool_call by id
           const idx = prev.findIndex(
@@ -217,6 +229,14 @@ export const ChatInterface: React.FC = () => {
     }
   };
 
+  // Check if a terminate tool_call with completed status is present
+  const hasCompletedTerminate = chatEvents.some(e =>
+    e.type === 'tool_call' &&
+    e.data.status === 'completed' &&
+    e.data.input?.reason &&
+    e.data.output?.terminated
+  );
+
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)] bg-white rounded-lg shadow-sm border">
       {/* Header with connection status and reset button */}
@@ -247,7 +267,7 @@ export const ChatInterface: React.FC = () => {
               )}
             </button>
           )}
-          {isThinking && isConnected && (
+          {isThinking && isConnected && !hasCompletedTerminate && (
             <button
               onClick={handleStop}
               className="flex items-center px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition-colors"
@@ -292,6 +312,15 @@ export const ChatInterface: React.FC = () => {
             case 'thinking':
               return <ThinkingBubble key={idx} content={event.data.content} />;
             case 'tool_call':
+              if (event.data.input?.reason && event.data.output?.terminated) {
+                return (
+                  <SuccessBanner
+                    key={idx}
+                    summary={event.data.output?.summary}
+                    reason={event.data.output?.reason}
+                  />
+                );
+              }
               return <ToolCallDisplay key={idx} toolCall={event.data} />;
             case 'error':
               return <ErrorBubble key={idx} error={event.data} onClear={

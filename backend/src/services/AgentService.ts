@@ -148,6 +148,15 @@ export class AgentService {
         for (const toolCall of toolCalls) {
           const result = await this.executeToolCall(toolCall, streamCallback);
           
+          // Add tool result to conversation history (always, even for terminate)
+          toolResults.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(result)
+          });
+          // Debug: Log tool_call_id for tool message
+          console.debug('[AgentService] Tool message added for tool_call_id:', toolCall.id);
+
           // Check if terminate was called
           if (toolCall.function.name === 'terminate') {
             shouldTerminate = true;
@@ -160,15 +169,6 @@ export class AgentService {
             }
             break;
           }
-
-          // Add tool result to conversation history
-          toolResults.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(result)
-          });
-          // Debug: Log tool_call_id for tool message
-          console.debug('[AgentService] Tool message added for tool_call_id:', toolCall.id);
         }
 
         // Add all tool results to conversation history
