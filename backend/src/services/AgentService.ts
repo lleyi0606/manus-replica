@@ -9,6 +9,7 @@ export class AgentService {
   private e2bService: E2BService;
   private conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   private seenToolCallIds = new Set<string>();
+  private shouldStop = false;
 
   constructor() {
     this.openai = new OpenAI({
@@ -48,7 +49,6 @@ export class AgentService {
     this.conversationHistory = [];
     this.seenToolCallIds.clear();
     
-    // Close and recreate E2B session
     await this.e2bService.closeSession();
     await this.e2bService.createSession();
     
@@ -61,8 +61,9 @@ export class AgentService {
   ): Promise<void> {
     let iteration = 0;
     let shouldTerminate = false;
+    this.shouldStop = false;
 
-    while (!shouldTerminate && iteration < maxIterations) {
+    while (!shouldTerminate && iteration < maxIterations && !this.shouldStop) {
       iteration++;
       
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -133,6 +134,8 @@ export class AgentService {
               arguments: tc.function.arguments
             }
           }));
+          // Debug: Log tool_call_ids in assistant message
+          console.debug('[AgentService] Assistant message with tool_calls:', assistantMessage.tool_calls.map(tc => tc.id));
         }
 
         this.conversationHistory.push(assistantMessage);
@@ -164,6 +167,8 @@ export class AgentService {
             tool_call_id: toolCall.id,
             content: JSON.stringify(result)
           });
+          // Debug: Log tool_call_id for tool message
+          console.debug('[AgentService] Tool message added for tool_call_id:', toolCall.id);
         }
 
         // Add all tool results to conversation history
@@ -181,7 +186,12 @@ export class AgentService {
       }
     }
 
-    if (iteration >= maxIterations) {
+    if (this.shouldStop) {
+      streamCallback({
+        type: 'message',
+        data: { content: '🛑 Thought cycle stopped by user.' }
+      });
+    } else if (iteration >= maxIterations) {
       streamCallback({
         type: 'message',
         data: { content: "I've reached the maximum number of iterations. The task may need to be broken down further or requires manual intervention." }
@@ -210,16 +220,19 @@ export class AgentService {
         type: "function",
         function: {
           name: "file_operation",
-          description: "Perform file operations",
+          description: "Perform file operations. " +
+            "When creating a directory, the path must end with a '/'. " +
+            "When creating a file in a directory that may not exist, first check if the directory exists. " +
+            "If not, create the directory (with a trailing '/'), then create the file.",
           parameters: {
             type: "object",
             properties: {
               type: { 
                 type: "string", 
                 enum: ["read", "write", "create", "delete", "list"],
-                description: "Type of file operation"
+                description: "Type of file operation. Use 'create' for directories."
               },
-              path: { type: "string", description: "File or directory path" },
+              path: { type: "string", description: "File or directory path. Directory paths must end with '/' when creating." },
               content: { type: "string", description: "Content for write operations" },
               recursive: { type: "boolean", description: "Recursive for directory operations" }
             },
@@ -361,5 +374,40 @@ export class AgentService {
 
       return errorResult;
     }
+  }
+
+  async sanitizeConversationHistory(): Promise<void> {
+    // Remove assistant messages with tool_calls that don't have matching tool messages
+    const toolCallIds = new Set<string>();
+    const toolMessages = new Set<string>();
+
+    // Collect all tool_call_ids from assistant messages
+    for (const msg of this.conversationHistory) {
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          toolCallIds.add(tc.id);
+        }
+      }
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        toolMessages.add(msg.tool_call_id);
+      }
+    }
+
+    // Remove assistant messages with tool_calls that don't have matching tool messages
+    this.conversationHistory = this.conversationHistory.filter(msg => {
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        return msg.tool_calls.every(tc => toolMessages.has(tc.id));
+      }
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        return toolCallIds.has(msg.tool_call_id);
+      }
+      return true;
+    });
+
+    console.log('[AgentService] Conversation history sanitized');
+  }
+
+  async stopThoughtCycle() {
+    this.shouldStop = true;
   }
 }

@@ -9,7 +9,7 @@ export interface ChatMessage {
   
   export interface ToolCall {
     id: string;
-    type: 'shell' | 'file' | 'code';
+    type: 'shell_command' | 'file_operation' | 'code_execution';
     input: any;
     output?: any;
     status: 'pending' | 'running' | 'completed' | 'error';

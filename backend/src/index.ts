@@ -34,6 +34,14 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'reset') {
         // Reset conversation context
         await agentService.resetConversation();
+      } else if (data.type === 'sanitize') {
+        await agentService.sanitizeConversationHistory();
+        ws.send(JSON.stringify({
+          type: 'message',
+          data: { content: 'Conversation history sanitized. You can try again.' }
+        }));
+      } else if (data.type === 'stop') {
+        await agentService.stopThoughtCycle();
       }
     } catch (error) {
       console.error('WebSocket error:', error);

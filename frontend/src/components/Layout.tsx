@@ -19,7 +19,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-500">
               <Terminal className="h-4 w-4" />
-              <span>Virtual Machine Agent</span>
+              <span>Agent</span>
             </div>
           </div>
         </div>

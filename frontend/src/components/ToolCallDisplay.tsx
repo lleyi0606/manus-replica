@@ -7,7 +7,7 @@ interface ToolCallDisplayProps {
 }
 
 function getToolCallSummary(toolCall: ToolCall): string {
-  if (toolCall.type === "file") {
+  if (toolCall.type === "file_operation") {
     switch (toolCall.input?.type) {
       case 'write':
         return `Wrote to file \`${toolCall.input.path}\``;
@@ -25,12 +25,12 @@ function getToolCallSummary(toolCall: ToolCall): string {
         return `File operation: ${toolCall.input?.type}`;
     }
   }
-  if (toolCall.type === 'shell') {
+  if (toolCall.type === 'shell_command') {
     return toolCall.input?.command
       ? `$ ${toolCall.input.command}`
       : 'Shell command';
   }
-  if (toolCall.type === 'code') {
+  if (toolCall.type === 'code_execution') {
     return `Executed ${toolCall.input?.language} code`;
   }
   return toolCall.type;

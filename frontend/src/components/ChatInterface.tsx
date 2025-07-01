@@ -16,7 +16,7 @@ const ThinkingBubble: React.FC<{ content: string }> = ({ content }) => (
     <div className="flex items-center mb-2">
       <span className="text-sm font-medium text-blue-800">AI is thinking...</span>
     </div>
-    <div className="text-sm text-blue-700 whitespace-pre-wrap">
+    <div className="text-sm text-blue-700 whitespace-pre-wrap prose prose-sm max-w-none !leading-tight [&_p]:my-1 [&_li]:my-0.5">
       <ReactMarkdown
         components={{
           code({inline, children, ...props}: any) {
@@ -32,9 +32,19 @@ const ThinkingBubble: React.FC<{ content: string }> = ({ content }) => (
   </div>
 );
 
-const ErrorBubble: React.FC<{ error: any }> = ({ error }) => (
-  <div className="bg-red-50 rounded-lg p-4 border-l-4 border-red-400">
-    <div className="text-sm text-red-700 font-medium">Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
+const ErrorBubble: React.FC<{ error: any, onClear?: () => void }> = ({ error, onClear }) => (
+  <div className="bg-red-50 rounded-lg p-4 border-l-4 border-red-400 flex items-center justify-between">
+    <div className="text-sm text-red-700 font-medium">
+      Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}
+    </div>
+    {onClear && (
+      <button
+        onClick={onClear}
+        className="ml-4 px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
+      >
+        Reconnect
+      </button>
+    )}
   </div>
 );
 
@@ -43,6 +53,7 @@ export const ChatInterface: React.FC = () => {
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -94,8 +105,10 @@ export const ChatInterface: React.FC = () => {
     setChatEvents(prev => {
       switch (response.type) {
         case 'thinking':
+          setIsThinking(true);
           return mergeThinking(prev, response.data.content);
         case 'tool_call': {
+          setIsThinking(true);
           // Update or add tool_call by id
           const idx = prev.findIndex(
             e => e.type === 'tool_call' && e.data.id === response.data.id
@@ -108,6 +121,7 @@ export const ChatInterface: React.FC = () => {
           return [...prev, { type: 'tool_call', data: response.data }];
         }
         case 'message': {
+          setIsThinking(false);
           // Remove trailing thinking events
           let events = [...prev];
           while (events.length > 0 && events[events.length - 1].type === 'thinking') {
@@ -137,6 +151,7 @@ export const ChatInterface: React.FC = () => {
           ];
         }
         case 'error':
+          setIsThinking(false);
           return [...prev, { type: 'error', data: response.data }];
         default:
           return prev;
@@ -160,6 +175,13 @@ export const ChatInterface: React.FC = () => {
     setTimeout(() => {
       setIsResetting(false);
     }, 1000);
+  };
+
+  const handleReconnectAndSanitize = () => {
+    if (wsRef.current && !isConnected) {
+      wsRef.current.send(JSON.stringify({ type: 'sanitize' }));
+      connectWebSocket();
+    }
   };
 
   const sendMessage = () => {
@@ -186,6 +208,12 @@ export const ChatInterface: React.FC = () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  };
+
+  const handleStop = () => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({ type: 'stop' }));
     }
   };
 
@@ -217,6 +245,15 @@ export const ChatInterface: React.FC = () => {
                   Clear Chat
                 </>
               )}
+            </button>
+          )}
+          {isThinking && isConnected && (
+            <button
+              onClick={handleStop}
+              className="flex items-center px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition-colors"
+              title="Stop the agent's thought cycle"
+            >
+              Stop
             </button>
           )}
           {!isConnected && (
@@ -257,7 +294,11 @@ export const ChatInterface: React.FC = () => {
             case 'tool_call':
               return <ToolCallDisplay key={idx} toolCall={event.data} />;
             case 'error':
-              return <ErrorBubble key={idx} error={event.data} />;
+              return <ErrorBubble key={idx} error={event.data} onClear={
+                (typeof event.data === 'string' ? event.data : event.data?.message) === 'Failed to process message'
+                  ? handleReconnectAndSanitize
+                  : undefined
+              } />;
             default:
               return null;
           }
