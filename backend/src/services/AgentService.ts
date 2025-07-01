@@ -322,10 +322,18 @@ export class AgentService {
 
       return result;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Tool execution error:', error);
+      
+      // Check if it's a timeout error
+      const isTimeout = error.message && error.message.includes('timed out');
+      const errorMessage = isTimeout 
+        ? 'Operation timed out. The virtual machine session has been recreated and the operation will be retried.'
+        : error instanceof Error ? error.message : 'Unknown error';
+      
       const errorResult = {
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: errorMessage,
+        isTimeout
       };
       
       streamCallback({

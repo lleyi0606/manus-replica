@@ -53,7 +53,6 @@ export const ChatInterface: React.FC = () => {
     const ws = new WebSocket('ws://localhost:3001');
     ws.onopen = () => {
       setIsConnected(true);
-      console.log('Connected to server');
     };
     ws.onmessage = (event) => {
       const response: StreamResponse = JSON.parse(event.data);
@@ -61,7 +60,6 @@ export const ChatInterface: React.FC = () => {
     };
     ws.onclose = () => {
       setIsConnected(false);
-      console.log('Disconnected from server');
     };
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
@@ -82,7 +80,6 @@ export const ChatInterface: React.FC = () => {
   };
 
   const handleStreamResponse = (response: StreamResponse) => {
-    console.log('[StreamResponse]', response.type, response.data);
     setChatEvents(prev => {
       switch (response.type) {
         case 'thinking':
