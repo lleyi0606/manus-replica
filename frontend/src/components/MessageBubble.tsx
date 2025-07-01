@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, Bot, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChatMessage } from '@manus-replica/shared';
+import ReactMarkdown from 'react-markdown';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -27,8 +28,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
               ? 'bg-blue-600 text-white' 
               : 'bg-gray-100 text-gray-900'
           }`}>
-            <div className="whitespace-pre-wrap break-words">{message.content}</div>
-            
+            <div className="prose prose-sm max-w-none">
+              <ReactMarkdown
+                components={{
+                  code({inline, children, ...props}: any) {
+                    return inline
+                      ? <code className="bg-gray-200 rounded px-1 py-0.5 text-xs" {...props}>{children}</code>
+                      : <pre className="bg-gray-900 text-white rounded p-2 overflow-x-auto text-xs"><code {...props}>{children}</code></pre>;
+                  }
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
             {message.thinking && (
               <div className="mt-2 pt-2 border-t border-gray-300">
                 <button

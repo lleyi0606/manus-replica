@@ -38,7 +38,7 @@ function getToolCallSummary(toolCall: ToolCall): string {
 
 function getIcon(toolCall: ToolCall) {
   switch (toolCall.type) {
-    case 'file':
+    case "file_operation":
       switch (toolCall.input?.type) {
         case 'write': return <Edit3 className="h-4 w-4" />;
         case 'read': return <FileText className="h-4 w-4" />;
@@ -47,9 +47,9 @@ function getIcon(toolCall: ToolCall) {
         case 'create': return toolCall.input.path.endsWith('/') ? <FolderPlus className="h-4 w-4" /> : <File className="h-4 w-4" />;
         default: return <File className="h-4 w-4" />;
       }
-    case 'shell':
+    case 'shell_command':
       return <Terminal className="h-4 w-4" />;
-    case 'code':
+    case 'code_execution':
       return <Code className="h-4 w-4" />;
     default:
       return <Terminal className="h-4 w-4" />;

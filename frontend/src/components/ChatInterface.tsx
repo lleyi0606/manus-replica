@@ -3,6 +3,7 @@ import { Send, RotateCcw } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { StreamResponse, ChatMessage, ToolCall } from '@manus-replica/shared';
+import ReactMarkdown from 'react-markdown';
 
 export type ChatEvent =
   | { type: 'message'; data: ChatMessage }
@@ -15,7 +16,19 @@ const ThinkingBubble: React.FC<{ content: string }> = ({ content }) => (
     <div className="flex items-center mb-2">
       <span className="text-sm font-medium text-blue-800">AI is thinking...</span>
     </div>
-    <div className="text-sm text-blue-700 whitespace-pre-wrap">{content}</div>
+    <div className="text-sm text-blue-700 whitespace-pre-wrap">
+      <ReactMarkdown
+        components={{
+          code({inline, children, ...props}: any) {
+            return inline
+              ? <code className="bg-blue-100 rounded px-1 py-0.5 text-xs" {...props}>{children}</code>
+              : <pre className="bg-blue-900 text-white rounded p-2 overflow-x-auto text-xs"><code {...props}>{children}</code></pre>;
+          }
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   </div>
 );
 
