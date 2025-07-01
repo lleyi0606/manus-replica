@@ -14,7 +14,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="flex items-center">
               <Bot className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-semibold text-gray-900">
-                AI Agent POC
+                Manus Replica
               </h1>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-500">

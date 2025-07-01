@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Terminal, File, Code, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import { ToolCall } from '@ai-agent/shared';
+import { ToolCall } from '@manus-replica/shared';
 
 interface ToolCallDisplayProps {
   toolCall: ToolCall;

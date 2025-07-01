@@ -1,17 +1,37 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { ToolCallDisplay } from './ToolCallDisplay';
-import { StreamResponse, ChatMessage, ToolCall } from '@ai-agent/shared';
+import { StreamResponse, ChatMessage, ToolCall } from '@manus-replica/shared';
+
+// Define a union type for all chat events
+// You can expand this as needed
+export type ChatEvent =
+  | { type: 'message'; data: ChatMessage }
+  | { type: 'thinking'; data: { content: string } }
+  | { type: 'tool_call'; data: ToolCall }
+  | { type: 'error'; data: any };
+
+// Minimal thinking and error components
+const ThinkingBubble: React.FC<{ content: string }> = ({ content }) => (
+  <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-400">
+    <div className="flex items-center mb-2">
+      <span className="text-sm font-medium text-blue-800">AI is thinking...</span>
+    </div>
+    <div className="text-sm text-blue-700 whitespace-pre-wrap">{content}</div>
+  </div>
+);
+
+const ErrorBubble: React.FC<{ error: any }> = ({ error }) => (
+  <div className="bg-red-50 rounded-lg p-4 border-l-4 border-red-400">
+    <div className="text-sm text-red-700 font-medium">Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
+  </div>
+);
 
 export const ChatInterface: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatEvents, setChatEvents] = useState<ChatEvent[]>([]);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-  const [currentThinking, setCurrentThinking] = useState('');
-  const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
-  
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -22,90 +42,110 @@ export const ChatInterface: React.FC = () => {
         wsRef.current.close();
       }
     };
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, currentThinking, activeToolCalls]);
+  }, [chatEvents]);
 
   const connectWebSocket = () => {
     const ws = new WebSocket('ws://localhost:3001');
-    
     ws.onopen = () => {
       setIsConnected(true);
       console.log('Connected to server');
     };
-    
     ws.onmessage = (event) => {
       const response: StreamResponse = JSON.parse(event.data);
       handleStreamResponse(response);
     };
-    
     ws.onclose = () => {
       setIsConnected(false);
       console.log('Disconnected from server');
     };
-    
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-
     wsRef.current = ws;
   };
 
-  const handleStreamResponse = (response: StreamResponse) => {
-    switch (response.type) {
-      case 'thinking':
-        setIsTyping(true);
-        setCurrentThinking(prev => prev + response.data.content);
-        break;
-        
-      case 'tool_call':
-        const toolCall = response.data as ToolCall;
-        setActiveToolCalls(prev => {
-          const existing = prev.find(tc => tc.id === toolCall.id);
-          if (existing) {
-            return prev.map(tc => tc.id === toolCall.id ? toolCall : tc);
-          }
-          return [...prev, toolCall];
-        });
-        break;
-        
-      case 'message':
-        setIsTyping(false);
-        const newMessage: ChatMessage = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: response.data.content,
-          timestamp: new Date(),
-          thinking: currentThinking,
-          toolCalls: activeToolCalls.length > 0 ? [...activeToolCalls] : undefined
-        };
-        setMessages(prev => [...prev, newMessage]);
-        setCurrentThinking('');
-        setActiveToolCalls([]);
-        break;
-        
-      case 'error':
-        setIsTyping(false);
-        console.error('Error:', response.data);
-        break;
+  // Helper to merge consecutive thinking events
+  const mergeThinking = (prev: ChatEvent[], newContent: string): ChatEvent[] => {
+    if (prev.length > 0 && prev[prev.length - 1].type === 'thinking') {
+      // Merge with previous thinking
+      return [
+        ...prev.slice(0, -1),
+        { type: 'thinking', data: { content: prev[prev.length - 1].data.content + newContent } }
+      ];
     }
+    return [...prev, { type: 'thinking', data: { content: newContent } }];
+  };
+
+  const handleStreamResponse = (response: StreamResponse) => {
+    console.log('[StreamResponse]', response.type, response.data);
+    setChatEvents(prev => {
+      switch (response.type) {
+        case 'thinking':
+          return mergeThinking(prev, response.data.content);
+        case 'tool_call': {
+          // Update or add tool_call by id
+          const idx = prev.findIndex(
+            e => e.type === 'tool_call' && e.data.id === response.data.id
+          );
+          if (idx !== -1) {
+            const updated = [...prev];
+            updated[idx] = { type: 'tool_call', data: response.data };
+            return updated;
+          }
+          return [...prev, { type: 'tool_call', data: response.data }];
+        }
+        case 'message': {
+          // Remove trailing thinking events
+          let events = [...prev];
+          while (events.length > 0 && events[events.length - 1].type === 'thinking') {
+            events.pop();
+          }
+          // Deduplicate by content and role
+          const last = events[events.length - 1];
+          if (
+            last &&
+            last.type === 'message' &&
+            last.data.content === response.data.content &&
+            last.data.role === 'assistant'
+          ) {
+            return events;
+          }
+          return [
+            ...events,
+            {
+              type: 'message',
+              data: {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: response.data.content,
+                timestamp: new Date()
+              }
+            }
+          ];
+        }
+        case 'error':
+          return [...prev, { type: 'error', data: response.data }];
+        default:
+          return prev;
+      }
+    });
   };
 
   const sendMessage = () => {
     if (!input.trim() || !wsRef.current || !isConnected) return;
-
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: input,
       timestamp: new Date()
     };
-
-    setMessages(prev => [...prev, userMessage]);
+    setChatEvents(prev => [...prev, { type: 'message', data: userMessage }]);
     setInput('');
-
     wsRef.current.send(JSON.stringify({
       type: 'chat',
       message: input
@@ -132,7 +172,7 @@ export const ChatInterface: React.FC = () => {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
+        {chatEvents.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
             <div className="text-lg mb-2">👋 Hello! I'm your AI Agent</div>
             <div className="text-sm">
@@ -148,35 +188,20 @@ export const ChatInterface: React.FC = () => {
           </div>
         )}
 
-        {messages.map((message) => (
-          <div key={message.id}>
-            <MessageBubble message={message} />
-            {message.toolCalls && (
-              <div className="mt-2 space-y-2">
-                {message.toolCalls.map((toolCall) => (
-                  <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-
-        {/* Current Thinking */}
-        {isTyping && currentThinking && (
-          <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-400">
-            <div className="flex items-center mb-2">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600 mr-2" />
-              <span className="text-sm font-medium text-blue-800">AI is thinking...</span>
-            </div>
-            <div className="text-sm text-blue-700 whitespace-pre-wrap">{currentThinking}</div>
-          </div>
-        )}
-
-        {/* Active Tool Calls */}
-        {activeToolCalls.map((toolCall) => (
-          <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
-        ))}
-
+        {chatEvents.map((event, idx) => {
+          switch (event.type) {
+            case 'message':
+              return <MessageBubble key={idx} message={event.data} />;
+            case 'thinking':
+              return <ThinkingBubble key={idx} content={event.data.content} />;
+            case 'tool_call':
+              return <ToolCallDisplay key={idx} toolCall={event.data} />;
+            case 'error':
+              return <ErrorBubble key={idx} error={event.data} />;
+            default:
+              return null;
+          }
+        })}
         <div ref={messagesEndRef} />
       </div>
 

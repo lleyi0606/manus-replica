@@ -2,11 +2,13 @@ import OpenAI from 'openai';
 import { ChatMessage, ToolCall, StreamResponse, ShellCommand, FileOperation, CodeExecution } from '@manus-replica/shared';
 import { E2BService } from './E2BService.js';
 import { v4 as uuidv4 } from 'uuid';
+import { AGENT_SYSTEM_PROMPT, NEXT_STEP_PROMPT } from '../prompt/agent.js';
 
 export class AgentService {
   private openai: OpenAI;
   private e2bService: E2BService;
   private conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  private seenToolCallIds = new Set<string>();
 
   constructor() {
     this.openai = new OpenAI({
@@ -23,91 +25,43 @@ export class AgentService {
       // Create a session if not exists
       const session = await this.e2bService.getOrCreateSession();
       
+      // Add user message to conversation history
+      this.conversationHistory.push({
+        role: "user",
+        content: message
+      });
+
+      // Start the thought cycle
+      await this.runThoughtCycle(streamCallback);
+
+    } catch (error) {
+      console.error('Agent processing error:', error);
+      streamCallback({
+        type: 'error',
+        data: { message: 'Failed to process message' }
+      });
+    }
+  }
+
+  private async runThoughtCycle(
+    streamCallback: (response: StreamResponse) => void,
+    maxIterations: number = 10
+  ): Promise<void> {
+    let iteration = 0;
+    let shouldTerminate = false;
+
+    while (!shouldTerminate && iteration < maxIterations) {
+      iteration++;
+      
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
           role: "system",
-          content: `
-          ## PERSISTENCE
-          You are an agent that can help users by executing commands in a virtual machine - please keep going until the user's query is completely
-          resolved, before ending your turn and yielding back to the user. Only
-          terminate your turn when you are sure that the problem is solved.
-
-          ## TOOL CALLING
-          If you are not sure about file content or codebase structure pertaining to
-          the user's request, use your tools to read files and gather the relevant
-          information: do NOT guess or make up an answer.
-
-          ## PLANNING
-          You MUST plan extensively before each function call, and reflect
-          extensively on the outcomes of the previous function calls. DO NOT do this
-          entire process by making function calls only, as this can impair your
-          ability to solve the problem and think insightfully.`
+          content: `${AGENT_SYSTEM_PROMPT}\n\n${NEXT_STEP_PROMPT}`
         },
-        ...this.conversationHistory,
-        {
-          role: "user",
-          content: message
-        }
+        ...this.conversationHistory
       ];
 
-      const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-        {
-          type: "function",
-          function: {
-            name: "shell_command",
-            description: "Execute a shell command in the virtual machine",
-            parameters: {
-              type: "object",
-              properties: {
-                command: { type: "string", description: "The shell command to execute" },
-                workingDirectory: { type: "string", description: "Working directory (optional)" }
-              },
-              required: ["command"]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "file_operation",
-            description: "Perform file operations",
-            parameters: {
-              type: "object",
-              properties: {
-                type: { 
-                  type: "string", 
-                  enum: ["read", "write", "create", "delete", "list"],
-                  description: "Type of file operation"
-                },
-                path: { type: "string", description: "File or directory path" },
-                content: { type: "string", description: "Content for write operations" },
-                recursive: { type: "boolean", description: "Recursive for directory operations" }
-              },
-              required: ["type", "path"]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "code_execution",
-            description: "Execute code in various programming languages",
-            parameters: {
-              type: "object",
-              properties: {
-                language: { 
-                  type: "string", 
-                  enum: ["python", "javascript", "bash"],
-                  description: "Programming language"
-                },
-                code: { type: "string", description: "Code to execute" },
-                timeout: { type: "number", description: "Timeout in seconds (optional)" }
-              },
-              required: ["language", "code"]
-            }
-          }
-        }
-      ];
+      const tools = this.getAvailableTools();
 
       const stream = await this.openai.chat.completions.create({
         model: "gpt-4o",
@@ -119,12 +73,15 @@ export class AgentService {
 
       let currentMessage = '';
       let toolCalls: any[] = [];
+      let hasContent = false;
 
+      // Process the stream
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
         
         if (delta?.content) {
           currentMessage += delta.content;
+          hasContent = true;
           streamCallback({
             type: 'thinking',
             data: { content: delta.content }
@@ -146,40 +103,176 @@ export class AgentService {
             }
           }
         }
+      }
 
-        if (chunk.choices[0]?.finish_reason === 'tool_calls') {
-          // Execute tool calls
-          for (const toolCall of toolCalls) {
-            await this.executeToolCall(toolCall, streamCallback);
+      // Add assistant message to conversation history
+      if (hasContent || toolCalls.length > 0) {
+        const assistantMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
+          role: "assistant",
+          content: currentMessage || null
+        };
+
+        if (toolCalls.length > 0) {
+          assistantMessage.tool_calls = toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments
+            }
+          }));
+        }
+
+        this.conversationHistory.push(assistantMessage);
+      }
+
+      // Execute tool calls if any
+      if (toolCalls.length > 0) {
+        const toolResults: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
+        for (const toolCall of toolCalls) {
+          const result = await this.executeToolCall(toolCall, streamCallback);
+          
+          // Check if terminate was called
+          if (toolCall.function.name === 'terminate') {
+            shouldTerminate = true;
+            // Send final message if provided
+            if (hasContent) {
+              streamCallback({
+                type: 'message',
+                data: { content: currentMessage }
+              });
+            }
+            break;
+          }
+
+          // Add tool result to conversation history
+          toolResults.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(result)
+          });
+        }
+
+        // Add all tool results to conversation history
+        this.conversationHistory.push(...toolResults);
+      } else {
+        // No tool calls, just a message - this might be the end
+        if (hasContent) {
+          streamCallback({
+            type: 'message',
+            data: { content: currentMessage }
+          });
+        }
+        // If no tool calls and no meaningful content, terminate
+        shouldTerminate = true;
+      }
+    }
+
+    if (iteration >= maxIterations) {
+      streamCallback({
+        type: 'message',
+        data: { content: "I've reached the maximum number of iterations. The task may need to be broken down further or requires manual intervention." }
+      });
+    }
+  }
+
+  private getAvailableTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return [
+      {
+        type: "function",
+        function: {
+          name: "shell_command",
+          description: "Execute a shell command in the virtual machine",
+          parameters: {
+            type: "object",
+            properties: {
+              command: { type: "string", description: "The shell command to execute" },
+              workingDirectory: { type: "string", description: "Working directory (optional)" }
+            },
+            required: ["command"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "file_operation",
+          description: "Perform file operations",
+          parameters: {
+            type: "object",
+            properties: {
+              type: { 
+                type: "string", 
+                enum: ["read", "write", "create", "delete", "list"],
+                description: "Type of file operation"
+              },
+              path: { type: "string", description: "File or directory path" },
+              content: { type: "string", description: "Content for write operations" },
+              recursive: { type: "boolean", description: "Recursive for directory operations" }
+            },
+            required: ["type", "path"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "code_execution",
+          description: "Execute code in various programming languages",
+          parameters: {
+            type: "object",
+            properties: {
+              language: { 
+                type: "string", 
+                enum: ["python", "javascript", "bash"],
+                description: "Programming language"
+              },
+              code: { type: "string", description: "Code to execute" },
+              timeout: { type: "number", description: "Timeout in seconds (optional)" }
+            },
+            required: ["language", "code"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "terminate",
+          description: "Terminate the conversation when the task is complete or when you want to end the interaction",
+          parameters: {
+            type: "object",
+            properties: {
+              reason: { 
+                type: "string", 
+                description: "Reason for termination (e.g., 'task completed', 'user request fulfilled')" 
+              },
+              summary: { 
+                type: "string", 
+                description: "Brief summary of what was accomplished" 
+              }
+            },
+            required: ["reason"]
           }
         }
       }
-
-      this.conversationHistory.push({ role: "user", content: message });
-      this.conversationHistory.push({ role: "assistant", content: currentMessage });
-
-      if (currentMessage && !toolCalls.length) {
-        streamCallback({
-          type: 'message',
-          data: { content: currentMessage }
-        });
-      }
-
-    } catch (error) {
-      console.error('Agent processing error:', error);
-      streamCallback({
-        type: 'error',
-        data: { message: 'Failed to process message' }
-      });
-    }
+    ];
   }
 
   private async executeToolCall(
     toolCall: any,
     streamCallback: (response: StreamResponse) => void
-  ): Promise<void> {
+  ): Promise<any> {
     const toolCallId = uuidv4();
     
+    // Debug: Check for duplicate toolCall ids
+    if (this.seenToolCallIds.has(toolCall.id)) {
+      console.warn(`[AgentService] Duplicate toolCall id detected: ${toolCall.id}`);
+    } else {
+      console.debug(`[AgentService] Processing toolCall id: ${toolCall.id}`);
+      this.seenToolCallIds.add(toolCall.id);
+    }
+
     try {
       const args = JSON.parse(toolCall.function.arguments);
       
@@ -205,6 +298,13 @@ export class AgentService {
         case 'code_execution':
           result = await this.e2bService.executeCode(args as CodeExecution);
           break;
+        case 'terminate':
+          result = { 
+            terminated: true, 
+            reason: args.reason,
+            summary: args.summary || 'Task completed'
+          };
+          break;
         default:
           throw new Error(`Unknown tool: ${toolCall.function.name}`);
       }
@@ -220,17 +320,26 @@ export class AgentService {
         }
       });
 
+      return result;
+
     } catch (error) {
       console.error('Tool execution error:', error);
+      const errorResult = {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      
       streamCallback({
         type: 'tool_call',
         data: {
           id: toolCallId,
           type: toolCall.function.name,
           status: 'error',
-          error: error instanceof Error ? error.message : 'Unknown error'
+          input: JSON.parse(toolCall.function.arguments),
+          error: errorResult.error
         }
       });
+
+      return errorResult;
     }
   }
 }
