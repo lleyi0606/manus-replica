@@ -113,13 +113,16 @@ export const ChatInterface: React.FC = () => {
   };
 
   const handleStreamResponse = (response: StreamResponse) => {
+    if ((response as any).type === 'session' && (response as any).sessionId) {
+      localStorage.setItem('e2bSessionId', (response as any).sessionId);
+    }
     setChatEvents(prev => {
       switch (response.type) {
         case 'thinking':
           setIsThinking(true);
           return mergeThinking(prev, response.data.content);
         case 'tool_call': {
-          console.log('[Frontend] tool_call event:', response.data);
+          // console.log('[Frontend] tool_call event:', response.data);
           setIsThinking(true);
           // Update or add tool_call by id
           const idx = prev.findIndex(
@@ -190,10 +193,42 @@ export const ChatInterface: React.FC = () => {
   };
 
   const handleReconnectAndSanitize = () => {
-    if (wsRef.current && !isConnected) {
-      wsRef.current.send(JSON.stringify({ type: 'sanitize' }));
-      connectWebSocket();
+    const sessionId = localStorage.getItem('e2bSessionId');
+
+    // Close the old WebSocket if it exists
+    if (wsRef.current) {
+      wsRef.current.close();
     }
+
+    // Create a new WebSocket
+    const ws = new WebSocket('ws://localhost:3001');
+
+    ws.onopen = () => {
+      if (sessionId) {
+        ws.send(JSON.stringify({ type: 'resume', sessionId }));
+      } else {
+        // If no sessionId, just let backend handle as new session
+        ws.send(JSON.stringify({ type: 'resume' }));
+      }
+      setIsConnected(true);
+      // Print the current session ID
+      console.log('[Frontend] Reconnect. Current E2B sessionId:', sessionId);
+    };
+
+    ws.onmessage = (event) => {
+      const response: StreamResponse = JSON.parse(event.data);
+      handleStreamResponse(response);
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    wsRef.current = ws;
   };
 
   const sendMessage = () => {
@@ -210,6 +245,9 @@ export const ChatInterface: React.FC = () => {
       type: 'chat',
       message: input
     }));
+    // Print the current session ID
+    const sessionId = localStorage.getItem('e2bSessionId');
+    console.log('[Frontend] Sent message. Current E2B sessionId:', sessionId);
   };
 
   const scrollToBottom = () => {

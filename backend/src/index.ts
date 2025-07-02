@@ -20,8 +20,11 @@ const agentService = new AgentService();
 const e2bService = new E2BService();
 
 // WebSocket connection handling
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
   console.log('Client connected');
+  // Send current sessionId (or create one if needed) on connect
+  const session = await e2bService.getOrCreateSession();
+  ws.send(JSON.stringify({ type: 'session', sessionId: session.sessionId }));
   
   ws.on('message', async (message) => {
     try {
@@ -34,6 +37,8 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'reset') {
         // Reset conversation context
         await agentService.resetConversation();
+        const session = await e2bService.getOrCreateSession();
+        ws.send(JSON.stringify({ type: 'session', sessionId: session.sessionId }));
       } else if (data.type === 'sanitize') {
         await e2bService.resumeSession();
         await agentService.sanitizeConversationHistory();
@@ -43,6 +48,18 @@ wss.on('connection', (ws) => {
         }));
       } else if (data.type === 'stop') {
         await agentService.stopThoughtCycle();
+      } else if (data.type === 'resume') {
+        // Attempt to resume the E2B session with the provided sessionId
+        let session = await e2bService.resumeSession(data.sessionId);
+        if (!session) {
+          session = await e2bService.createSession();
+        }
+        await agentService.sanitizeConversationHistory();
+        ws.send(JSON.stringify({ type: 'session', sessionId: session.sessionId }));
+        ws.send(JSON.stringify({
+          type: 'message',
+          data: { content: 'Session resumed and conversation history sanitized. You can try again.' }
+        }));
       }
     } catch (error) {
       console.error('WebSocket error:', error);

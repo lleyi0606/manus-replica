@@ -37,12 +37,17 @@ export class E2BService {
     }
   }
 
-  async resumeSession(): Promise<{ sessionId: string } | null> {
-    if (this.sessionId) {
+  async resumeSession(sessionId?: string): Promise<{ sessionId: string } | null> {
+    // log resume session and session id
+    console.log('[E2BService] Resuming session:', sessionId);
+
+    const idToUse = sessionId || this.sessionId;
+    if (idToUse) {
       try {
-        this.sandbox = await Sandbox.reconnect(this.sessionId);
-        console.log('[E2BService] Resumed session:', this.sessionId);
-        return { sessionId: this.sessionId };
+        this.sandbox = await Sandbox.reconnect(idToUse);
+        this.sessionId = idToUse;
+        console.log('[E2BService] Resumed session:', idToUse);
+        return { sessionId: idToUse };
       } catch (error) {
         console.error('[E2BService] Failed to resume session:', error);
         // fallback: create a new session if resume fails
