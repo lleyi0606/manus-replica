@@ -247,6 +247,16 @@ export const ChatInterface: React.FC = () => {
         </div>
         
         <div className="flex items-center space-x-2">
+          {!isConnected && (
+            <button
+              onClick={handleReconnectAndSanitize}
+              className="flex items-center px-3 py-1.5 bg-yellow-500 text-white text-sm rounded-md hover:bg-yellow-600 transition-colors"
+              title="Reconnect to the agent"
+            >
+              <RotateCcw className="h-4 w-4 mr-1" />
+              Reconnect
+            </button>
+          )}
           {isConnected && (
             <button
               onClick={clearConversation}

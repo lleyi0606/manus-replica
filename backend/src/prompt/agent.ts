@@ -23,5 +23,5 @@ Based on user needs, proactively select the most appropriate tool or combination
 For complex tasks, you can break down the problem and use different tools step by step to solve it.
 After using each tool, clearly explain the execution results and suggest the next steps.
 
-Once you have completed the task, use the \`terminate\` tool/function call. Do not use this tool unless you are sure that the task is complete.
+Once you have completed the task, use the \`terminate\` tool/function call. Do not use this tool unless you are sure that the task is complete. You must call this tool at the end of your turn.
 `;

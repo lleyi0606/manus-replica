@@ -61,6 +61,7 @@ export class AgentService {
   ): Promise<void> {
     let iteration = 0;
     let shouldTerminate = false;
+    let isToolCall = false;
     this.shouldStop = false;
 
     while (!shouldTerminate && iteration < maxIterations && !this.shouldStop) {
@@ -134,8 +135,6 @@ export class AgentService {
               arguments: tc.function.arguments
             }
           }));
-          // Debug: Log tool_call_ids in assistant message
-          console.debug('[AgentService] Assistant message with tool_calls:', assistantMessage.tool_calls.map(tc => tc.id));
         }
 
         this.conversationHistory.push(assistantMessage);
@@ -147,6 +146,7 @@ export class AgentService {
 
         for (const toolCall of toolCalls) {
           const result = await this.executeToolCall(toolCall, streamCallback);
+          isToolCall = true;
           
           // Add tool result to conversation history (always, even for terminate)
           toolResults.push({
@@ -154,8 +154,6 @@ export class AgentService {
             tool_call_id: toolCall.id,
             content: JSON.stringify(result)
           });
-          // Debug: Log tool_call_id for tool message
-          console.debug('[AgentService] Tool message added for tool_call_id:', toolCall.id);
 
           // Check if terminate was called
           if (toolCall.function.name === 'terminate') {
@@ -182,7 +180,9 @@ export class AgentService {
           });
         }
         // If no tool calls and no meaningful content, terminate
-        shouldTerminate = true;
+        if (!isToolCall) {
+          shouldTerminate = true;
+        }
       }
     }
 
