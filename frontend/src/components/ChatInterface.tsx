@@ -37,14 +37,14 @@ const ErrorBubble: React.FC<{ error: any, onClear?: () => void }> = ({ error, on
     <div className="text-sm text-red-700 font-medium">
       Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}
     </div>
-    {onClear && (
+    {/* {onClear && (
       <button
         onClick={onClear}
         className="ml-4 px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
       >
         Reconnect
       </button>
-    )}
+    )} */}
   </div>
 );
 

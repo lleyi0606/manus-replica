@@ -35,6 +35,7 @@ wss.on('connection', (ws) => {
         // Reset conversation context
         await agentService.resetConversation();
       } else if (data.type === 'sanitize') {
+        await e2bService.resumeSession();
         await agentService.sanitizeConversationHistory();
         ws.send(JSON.stringify({
           type: 'message',

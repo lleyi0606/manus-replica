@@ -10,9 +10,8 @@ export class E2BService {
   }
 
   private async handleTimeoutError(): Promise<void> {
-    console.warn('[E2BService] Session timeout detected, recreating session...');
-    await this.closeSession();
-    await this.createSession();
+    console.warn('[E2BService] Session timeout detected, attempting to resume session...');
+    await this.resumeSession();
   }
 
   async getOrCreateSession(): Promise<{ sessionId: string }> {
@@ -36,6 +35,21 @@ export class E2BService {
       console.error('[E2BService] Failed to create session:', error);
       throw error;
     }
+  }
+
+  async resumeSession(): Promise<{ sessionId: string } | null> {
+    if (this.sessionId) {
+      try {
+        this.sandbox = await Sandbox.reconnect(this.sessionId);
+        console.log('[E2BService] Resumed session:', this.sessionId);
+        return { sessionId: this.sessionId };
+      } catch (error) {
+        console.error('[E2BService] Failed to resume session:', error);
+        // fallback: create a new session if resume fails
+        return this.createSession();
+      }
+    }
+    return null;
   }
 
   async executeShellCommand(command: ShellCommand): Promise<any> {
